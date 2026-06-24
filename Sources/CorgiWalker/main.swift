@@ -91,8 +91,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var currentBreed: DogBreed
     private var currentWidth: CGFloat
     private var currentSpeed: CGFloat
+    private var showsTrack = false
     private var statusItem: NSStatusItem?
     private var breedMenuItems: [DogBreed: NSMenuItem] = [:]
+    private var trackMenuItem: NSMenuItem?
 
     override init() {
         let configuration = AppConfiguration.from(arguments: CommandLine.arguments)
@@ -152,6 +154,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
+        let trackItem = NSMenuItem(
+            title: "Show Track",
+            action: #selector(toggleTrack),
+            keyEquivalent: ""
+        )
+        trackItem.target = self
+        trackItem.state = .off
+        trackMenuItem = trackItem
+        menu.addItem(trackItem)
+
+        menu.addItem(NSMenuItem.separator())
+
         let quitItem = NSMenuItem(
             title: "Quit Corgi Walker",
             action: #selector(quitApp),
@@ -166,6 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyBreed(currentBreed)
         applyWidth(currentWidth)
         applySpeed(currentSpeed)
+        applyTrackVisibility(showsTrack)
         animation.start(on: button, canvasWidth: currentWidth)
     }
 
@@ -230,6 +245,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         animation.setSpeed(speed)
     }
 
+    @objc
+    private func toggleTrack() {
+        applyTrackVisibility(!showsTrack)
+    }
+
+    private func applyTrackVisibility(_ showsTrack: Bool) {
+        self.showsTrack = showsTrack
+        trackMenuItem?.state = showsTrack ? .on : .off
+        animation.setTrackVisible(showsTrack)
+    }
+
     private func promptForNumber(
         title: String,
         message: String,
@@ -286,6 +312,7 @@ final class DogAnimationController {
     private var canvasWidth: CGFloat = 72
     private var breed: DogBreed
     private var speed: CGFloat
+    private var showsTrack = false
 
     private let canvasHeight: CGFloat = 18
 
@@ -323,6 +350,11 @@ final class DogAnimationController {
 
     func setSpeed(_ speed: CGFloat) {
         self.speed = speed
+    }
+
+    func setTrackVisible(_ showsTrack: Bool) {
+        self.showsTrack = showsTrack
+        redraw()
     }
 
     @objc
@@ -367,15 +399,17 @@ final class DogAnimationController {
         NSColor.clear.setFill()
         rect.fill()
 
-        let trackRect = NSRect(
-            x: 4,
-            y: 6.5,
-            width: canvasWidth - 8,
-            height: 5
-        )
-        let track = NSBezierPath(roundedRect: trackRect, xRadius: 2.5, yRadius: 2.5)
-        NSColor(white: 0.75, alpha: 0.25).setFill()
-        track.fill()
+        if showsTrack {
+            let trackRect = NSRect(
+                x: 4,
+                y: 6.5,
+                width: canvasWidth - 8,
+                height: 5
+            )
+            let track = NSBezierPath(roundedRect: trackRect, xRadius: 2.5, yRadius: 2.5)
+            NSColor(white: 0.75, alpha: 0.25).setFill()
+            track.fill()
+        }
 
         let origin = CGPoint(x: position, y: 2)
         let facingRight = direction > 0
