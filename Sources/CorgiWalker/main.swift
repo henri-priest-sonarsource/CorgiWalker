@@ -32,6 +32,7 @@ struct AppConfiguration {
     static let minimumCanvasWidth: CGFloat = 40
     static let defaultSpeed: CGFloat = 1.15
     static let minimumSpeed: CGFloat = 0.1
+    static let statusSignalPath = "/tmp/corgiwalker-status"
 
     let initialBreed: DogBreed
     let canvasWidth: CGFloat
@@ -399,15 +400,20 @@ final class DogAnimationController {
     private var showsTrack = false
     private var showsPortal = false
     private var showsHouse = false
+    private var isPausedBySignal = false
+    private var showsPauseAlert = false
     private var targetPosition: CGFloat?
     private var spinAngle: CGFloat = 0
     private var spinStepCount = 0
     private var sleepStepCount = 0
     private var hasCheckedHouseOnCurrentApproach = false
+    private var signalPollStepCount = 0
+    private var lastSignalContents = ""
 
     private let canvasHeight: CGFloat = 18
     private let spinFrameCount = 10
     private let houseSize = CGSize(width: 14, height: 13)
+    private let signalPollInterval = 8
 
     init(breed: DogBreed, speed: CGFloat) {
         self.breed = breed
@@ -488,6 +494,8 @@ final class DogAnimationController {
 
     @objc
     private func step() {
+        pollSignalIfNeeded()
+
         if spinStepCount > 0 {
             spinStepCount -= 1
             spinAngle += 36
@@ -496,6 +504,11 @@ final class DogAnimationController {
                 spinAngle = 0
             }
 
+            redraw()
+            return
+        }
+
+        if isPausedBySignal {
             redraw()
             return
         }
@@ -526,6 +539,49 @@ final class DogAnimationController {
         }
 
         redraw()
+    }
+
+    private func pollSignalIfNeeded() {
+        signalPollStepCount += 1
+
+        guard signalPollStepCount >= signalPollInterval else {
+            return
+        }
+
+        signalPollStepCount = 0
+
+        guard
+            let contents = try? String(contentsOfFile: AppConfiguration.statusSignalPath, encoding: .utf8)
+        else {
+            if !lastSignalContents.isEmpty {
+                lastSignalContents = ""
+            }
+            return
+        }
+
+        let normalizedContents = contents
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        guard normalizedContents != lastSignalContents else {
+            return
+        }
+
+        lastSignalContents = normalizedContents
+
+        switch normalizedContents {
+        case "pause":
+            isPausedBySignal = true
+            showsPauseAlert = true
+        case "stop", "busy":
+            isPausedBySignal = true
+            showsPauseAlert = false
+        case "resume", "go", "idle":
+            isPausedBySignal = false
+            showsPauseAlert = false
+        default:
+            break
+        }
     }
 
     private var maxPositionX: CGFloat {
@@ -599,14 +655,28 @@ final class DogAnimationController {
         if !isSleeping {
             let origin = CGPoint(x: position, y: 2)
             let facingRight = direction > 0
+            let pauseTint = currentPauseTintColor()
 
             switch breed {
             case .corgi:
-                drawCorgi(at: origin, facingRight: facingRight)
+                drawCorgi(at: origin, facingRight: facingRight, pauseTint: pauseTint)
             case .papillon:
-                drawPapillon(at: origin, facingRight: facingRight)
+                drawPapillon(at: origin, facingRight: facingRight, pauseTint: pauseTint)
             }
         }
+    }
+
+    private func currentPauseTintColor() -> NSColor? {
+        guard showsPauseAlert, isPausedBySignal else {
+            return nil
+        }
+
+        let blinkPhase = (signalPollStepCount / 2) % 2
+        guard blinkPhase == 0 else {
+            return nil
+        }
+
+        return NSColor(calibratedRed: 0.95, green: 0.16, blue: 0.12, alpha: 0.72)
     }
 
     private func currentPortalZone() -> PortalZone? {
@@ -818,7 +888,7 @@ final class DogAnimationController {
         NSString(string: text).draw(at: CGPoint(x: x, y: y), withAttributes: attributes)
     }
 
-    private func drawCorgi(at origin: CGPoint, facingRight: Bool) {
+    private func drawCorgi(at origin: CGPoint, facingRight: Bool, pauseTint: NSColor?) {
         let transform = drawingTransform(origin: origin, facingRight: facingRight)
 
         fillRoundedRect(
@@ -827,7 +897,10 @@ final class DogAnimationController {
             width: 13,
             height: 7,
             radius: 3,
-            color: NSColor(calibratedRed: 0.86, green: 0.52, blue: 0.22, alpha: 1),
+            color: tintedColor(
+                NSColor(calibratedRed: 0.86, green: 0.52, blue: 0.22, alpha: 1),
+                pauseTint: pauseTint
+            ),
             transform: transform
         )
 
@@ -837,7 +910,10 @@ final class DogAnimationController {
             width: 7,
             height: 6,
             radius: 3,
-            color: NSColor(calibratedRed: 0.94, green: 0.78, blue: 0.58, alpha: 1),
+            color: tintedColor(
+                NSColor(calibratedRed: 0.94, green: 0.78, blue: 0.58, alpha: 1),
+                pauseTint: pauseTint
+            ),
             transform: transform
         )
 
@@ -847,7 +923,7 @@ final class DogAnimationController {
             width: 9,
             height: 3.5,
             radius: 1.75,
-            color: .white,
+            color: tintedColor(.white, pauseTint: pauseTint),
             transform: transform
         )
 
@@ -871,19 +947,22 @@ final class DogAnimationController {
             transform: transform
         )
 
-        drawEar(x: 14.2, y: 9.5, width: 3.2, height: 3.2, color: NSColor(calibratedRed: 0.78, green: 0.42, blue: 0.14, alpha: 1), transform: transform)
-        drawEar(x: 17.7, y: 9.4, width: 3.2, height: 3.1, color: NSColor(calibratedRed: 0.78, green: 0.42, blue: 0.14, alpha: 1), transform: transform)
-        drawLeg(x: 6.1, y: 0.4, height: 3.5, color: .white, transform: transform)
-        drawLeg(x: 9.4, y: 0.4, height: 3.5, color: .white, transform: transform)
-        drawLeg(x: 13, y: 0.4, height: 3.5, color: .white, transform: transform)
-        drawLeg(x: 15.8, y: 0.4, height: 3.5, color: .white, transform: transform)
+        drawEar(x: 14.2, y: 9.5, width: 3.2, height: 3.2, color: tintedColor(NSColor(calibratedRed: 0.78, green: 0.42, blue: 0.14, alpha: 1), pauseTint: pauseTint), transform: transform)
+        drawEar(x: 17.7, y: 9.4, width: 3.2, height: 3.1, color: tintedColor(NSColor(calibratedRed: 0.78, green: 0.42, blue: 0.14, alpha: 1), pauseTint: pauseTint), transform: transform)
+        drawLeg(x: 6.1, y: 0.4, height: 3.5, color: tintedColor(.white, pauseTint: pauseTint), transform: transform)
+        drawLeg(x: 9.4, y: 0.4, height: 3.5, color: tintedColor(.white, pauseTint: pauseTint), transform: transform)
+        drawLeg(x: 13, y: 0.4, height: 3.5, color: tintedColor(.white, pauseTint: pauseTint), transform: transform)
+        drawLeg(x: 15.8, y: 0.4, height: 3.5, color: tintedColor(.white, pauseTint: pauseTint), transform: transform)
         drawTail(
             start: CGPoint(x: 3.5, y: 8.2),
             end: CGPoint(x: 0.6, y: 10.5),
             controlPoint1: CGPoint(x: 2.2, y: 10),
             controlPoint2: CGPoint(x: 1.4, y: 10.6),
             width: 1.7,
-            color: NSColor(calibratedRed: 0.86, green: 0.52, blue: 0.22, alpha: 1),
+            color: tintedColor(
+                NSColor(calibratedRed: 0.86, green: 0.52, blue: 0.22, alpha: 1),
+                pauseTint: pauseTint
+            ),
             transform: transform
         )
         drawOutline(
@@ -893,10 +972,16 @@ final class DogAnimationController {
         )
     }
 
-    private func drawPapillon(at origin: CGPoint, facingRight: Bool) {
+    private func drawPapillon(at origin: CGPoint, facingRight: Bool, pauseTint: NSColor?) {
         let transform = drawingTransform(origin: origin, facingRight: facingRight)
-        let coatColor = NSColor(calibratedRed: 0.96, green: 0.95, blue: 0.92, alpha: 1)
-        let accentColor = NSColor(calibratedRed: 0.72, green: 0.36, blue: 0.16, alpha: 1)
+        let coatColor = tintedColor(
+            NSColor(calibratedRed: 0.96, green: 0.95, blue: 0.92, alpha: 1),
+            pauseTint: pauseTint
+        )
+        let accentColor = tintedColor(
+            NSColor(calibratedRed: 0.72, green: 0.36, blue: 0.16, alpha: 1),
+            pauseTint: pauseTint
+        )
 
         fillRoundedRect(
             x: 5,
@@ -944,7 +1029,7 @@ final class DogAnimationController {
             width: 1.7,
             height: 1.7,
             radius: 0.85,
-            color: .black,
+            color: tintedColor(.black, pauseTint: pauseTint),
             transform: transform
         )
 
@@ -954,7 +1039,7 @@ final class DogAnimationController {
             width: 1.5,
             height: 1.5,
             radius: 0.75,
-            color: .black,
+            color: tintedColor(.black, pauseTint: pauseTint),
             transform: transform
         )
 
@@ -1015,6 +1100,14 @@ final class DogAnimationController {
         path.transform(using: transform)
         color.setFill()
         path.fill()
+    }
+
+    private func tintedColor(_ baseColor: NSColor, pauseTint: NSColor?) -> NSColor {
+        guard let pauseTint else {
+            return baseColor
+        }
+
+        return baseColor.blended(withFraction: 0.72, of: pauseTint) ?? pauseTint
     }
 
     private func drawEar(

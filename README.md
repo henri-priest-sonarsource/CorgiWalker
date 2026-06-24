@@ -54,6 +54,17 @@ Toggle `House` to show a dog house on the far right. When the dog reaches it, th
 
 The dog animates inside a fixed-width menu bar item. macOS does not provide a supported way to move an item freely across the entire menu bar, so the animation stays within its own slot.
 
+## Shell status integration
+
+The app also watches `/tmp/corgiwalker-status` for simple control signals from shell commands. These commands pause and resume movement:
+
+```sh
+printf 'pause\n' > /tmp/corgiwalker-status
+printf 'resume\n' > /tmp/corgiwalker-status
+```
+
+`pause` also makes the dog blink red while stopped. It also accepts `stop` / `go` and `busy` / `idle`.
+
 ## Allowing unsigned apps
 
 You may need to "Jailbreak" MacOS to allow unsigned apps.
