@@ -42,10 +42,22 @@ To change how fast the dog moves:
 open build/CorgiWalker.app --args --speed 1.8
 ```
 
+To start with the portal enabled:
+
+```sh
+open build/CorgiWalker.app --args --portal
+```
+
+To start with the house enabled:
+
+```sh
+open build/CorgiWalker.app --args --house
+```
+
 You can combine both options:
 
 ```sh
-open build/CorgiWalker.app --args --dog papillon --width 120 --speed 1.8
+open build/CorgiWalker.app --args --dog papillon --width 120 --speed 1.8 --portal --house
 ```
 
 Right-click the status item, or control-click it, to open the menu. Left-clicking the dog makes it briefly stop and spin; left-clicking empty track makes it head toward that point and then continue normally in that direction. You can also switch `Dog` from the menu, use `Set Width...` or `Set Speed...` there to enter exact numeric values while the app is running, and toggle `Portal` to add orange and blue portal ovals that instantly jump the dog across the middle 30% of the track.

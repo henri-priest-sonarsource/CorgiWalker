@@ -37,12 +37,16 @@ struct AppConfiguration {
     let initialBreed: DogBreed
     let canvasWidth: CGFloat
     let speed: CGFloat
+    let startsWithPortalVisible: Bool
+    let startsWithHouseVisible: Bool
 
     static func from(arguments: [String]) -> AppConfiguration {
         AppConfiguration(
             initialBreed: breedArgument(in: arguments),
             canvasWidth: widthArgument(in: arguments),
-            speed: speedArgument(in: arguments)
+            speed: speedArgument(in: arguments),
+            startsWithPortalVisible: flagPresent("--portal", in: arguments),
+            startsWithHouseVisible: flagPresent("--house", in: arguments)
         )
     }
 
@@ -85,6 +89,10 @@ struct AppConfiguration {
 
         return arguments[valueIndex]
     }
+
+    private static func flagPresent(_ flag: String, in arguments: [String]) -> Bool {
+        arguments.contains(flag)
+    }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -107,6 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         currentBreed = configuration.initialBreed
         currentWidth = configuration.canvasWidth
         currentSpeed = configuration.speed
+        showsPortal = configuration.startsWithPortalVisible
+        showsHouse = configuration.startsWithHouseVisible
         animation = DogAnimationController(
             breed: configuration.initialBreed,
             speed: configuration.speed
