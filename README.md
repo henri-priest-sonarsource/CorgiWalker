@@ -50,6 +50,8 @@ open build/CorgiWalker.app --args --dog papillon --width 120 --speed 1.8
 
 Right-click the status item, or control-click it, to open the menu. Left-clicking the dog makes it briefly stop and spin; left-clicking empty track makes it head toward that point and then continue normally in that direction. You can also switch `Dog` from the menu, use `Set Width...` or `Set Speed...` there to enter exact numeric values while the app is running, and toggle `Portal` to add orange and blue portal ovals that instantly jump the dog across the middle 30% of the track.
 
+Toggle `House` to show a dog house on the far right. When the dog reaches it, there is a 33% chance it will sleep there for 10-30 seconds. While sleeping, the dog disappears and the house shows animated cartoon `Z` letters. Clicking the house while the dog is asleep wakes it and triggers the spin animation before it moves again.
+
 The dog animates inside a fixed-width menu bar item. macOS does not provide a supported way to move an item freely across the entire menu bar, so the animation stays within its own slot.
 
 ## Allowing unsigned apps

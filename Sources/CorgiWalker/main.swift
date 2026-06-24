@@ -93,11 +93,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var currentSpeed: CGFloat
     private var showsTrack = false
     private var showsPortal = false
+    private var showsHouse = false
     private var statusItem: NSStatusItem?
     private var statusMenu: NSMenu?
     private var breedMenuItems: [DogBreed: NSMenuItem] = [:]
     private var trackMenuItem: NSMenuItem?
     private var portalMenuItem: NSMenuItem?
+    private var houseMenuItem: NSMenuItem?
 
     override init() {
         let configuration = AppConfiguration.from(arguments: CommandLine.arguments)
@@ -184,6 +186,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
+        let houseItem = NSMenuItem(
+            title: "House",
+            action: #selector(toggleHouse),
+            keyEquivalent: ""
+        )
+        houseItem.target = self
+        houseItem.state = .off
+        houseMenuItem = houseItem
+        menu.addItem(houseItem)
+
+        menu.addItem(NSMenuItem.separator())
+
         let quitItem = NSMenuItem(
             title: "Quit Corgi Walker",
             action: #selector(quitApp),
@@ -200,6 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applySpeed(currentSpeed)
         applyTrackVisibility(showsTrack)
         applyPortalVisibility(showsPortal)
+        applyHouseVisibility(showsHouse)
         animation.start(on: button, canvasWidth: currentWidth)
     }
 
@@ -301,6 +316,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         animation.setPortalVisible(showsPortal)
     }
 
+    @objc
+    private func toggleHouse() {
+        applyHouseVisibility(!showsHouse)
+    }
+
+    private func applyHouseVisibility(_ showsHouse: Bool) {
+        self.showsHouse = showsHouse
+        houseMenuItem?.state = showsHouse ? .on : .off
+        animation.setHouseVisible(showsHouse)
+    }
+
     private func shouldOpenMenu(for event: NSEvent) -> Bool {
         if event.type == .rightMouseUp {
             return true
@@ -372,12 +398,16 @@ final class DogAnimationController {
     private var speed: CGFloat
     private var showsTrack = false
     private var showsPortal = false
+    private var showsHouse = false
     private var targetPosition: CGFloat?
     private var spinAngle: CGFloat = 0
     private var spinStepCount = 0
+    private var sleepStepCount = 0
+    private var hasCheckedHouseOnCurrentApproach = false
 
     private let canvasHeight: CGFloat = 18
     private let spinFrameCount = 10
+    private let houseSize = CGSize(width: 14, height: 13)
 
     init(breed: DogBreed, speed: CGFloat) {
         self.breed = breed
@@ -427,7 +457,20 @@ final class DogAnimationController {
         redraw()
     }
 
+    func setHouseVisible(_ showsHouse: Bool) {
+        self.showsHouse = showsHouse
+        sleepStepCount = 0
+        hasCheckedHouseOnCurrentApproach = false
+        redraw()
+    }
+
     func handleClick(at point: CGPoint) {
+        if sleepStepCount > 0, showsHouse, houseBounds.contains(point) {
+            startSpin()
+            redraw()
+            return
+        }
+
         if dogBounds.contains(point) {
             startSpin()
             redraw()
@@ -457,13 +500,26 @@ final class DogAnimationController {
             return
         }
 
+        if sleepStepCount > 0 {
+            sleepStepCount -= 1
+
+            if sleepStepCount == 0 {
+                direction = -1
+            }
+
+            redraw()
+            return
+        }
+
         position += direction * speed
         applyPortalTransitionIfNeeded()
         applyTargetPositionIfNeeded()
+        applyHouseBehaviorIfNeeded()
 
         if position <= 6 {
             position = 6
             direction = 1
+            hasCheckedHouseOnCurrentApproach = false
         } else if position >= maxPositionX {
             position = maxPositionX
             direction = -1
@@ -480,11 +536,25 @@ final class DogAnimationController {
         NSRect(x: position, y: 2, width: breed.spriteSize.width, height: breed.spriteSize.height)
     }
 
+    private var isSleeping: Bool {
+        sleepStepCount > 0
+    }
+
+    private var houseBounds: NSRect {
+        NSRect(
+            x: canvasWidth - houseSize.width - 4,
+            y: 2,
+            width: houseSize.width,
+            height: houseSize.height
+        )
+    }
+
     private func clampPosition() {
         position = min(max(position, 6), maxPositionX)
         targetPosition = adjustedTargetPosition(targetPosition)
         applyPortalTransitionIfNeeded()
         applyTargetPositionIfNeeded()
+        resetHouseApproachIfNeeded()
     }
 
     private func redraw() {
@@ -522,14 +592,20 @@ final class DogAnimationController {
             drawPortal(portalZone)
         }
 
-        let origin = CGPoint(x: position, y: 2)
-        let facingRight = direction > 0
+        if showsHouse {
+            drawHouse()
+        }
 
-        switch breed {
-        case .corgi:
-            drawCorgi(at: origin, facingRight: facingRight)
-        case .papillon:
-            drawPapillon(at: origin, facingRight: facingRight)
+        if !isSleeping {
+            let origin = CGPoint(x: position, y: 2)
+            let facingRight = direction > 0
+
+            switch breed {
+            case .corgi:
+                drawCorgi(at: origin, facingRight: facingRight)
+            case .papillon:
+                drawPapillon(at: origin, facingRight: facingRight)
+            }
         }
     }
 
@@ -583,7 +659,8 @@ final class DogAnimationController {
             return nil
         }
 
-        let clampedTarget = min(max(rawTargetPosition, 6), maxPositionX)
+        let upperBound = showsHouse ? houseRestPosition : maxPositionX
+        let clampedTarget = min(max(rawTargetPosition, 6), upperBound)
 
         guard showsPortal, let portalZone = currentPortalZone() else {
             return clampedTarget
@@ -598,9 +675,50 @@ final class DogAnimationController {
     }
 
     private func startSpin() {
+        if sleepStepCount > 0 {
+            direction = -1
+            hasCheckedHouseOnCurrentApproach = true
+        }
+
         spinStepCount = spinFrameCount
         spinAngle = 0
+        sleepStepCount = 0
         targetPosition = nil
+    }
+
+    private var houseRestPosition: CGFloat {
+        min(maxPositionX, houseBounds.minX - (breed.spriteSize.width * 0.2))
+    }
+
+    private func applyHouseBehaviorIfNeeded() {
+        guard showsHouse else { return }
+
+        if direction < 0 || position < houseRestPosition {
+            hasCheckedHouseOnCurrentApproach = false
+            return
+        }
+
+        guard !hasCheckedHouseOnCurrentApproach else { return }
+        guard position >= houseRestPosition else { return }
+
+        hasCheckedHouseOnCurrentApproach = true
+        position = houseRestPosition
+
+        if Int.random(in: 1...3) == 1 {
+            sleepStepCount = Int.random(in: 167...500)
+            targetPosition = nil
+            spinStepCount = 0
+            spinAngle = 0
+            return
+        }
+
+        direction = -1
+    }
+
+    private func resetHouseApproachIfNeeded() {
+        if direction < 0 || position < houseRestPosition {
+            hasCheckedHouseOnCurrentApproach = false
+        }
     }
 
     private func drawPortal(_ portalZone: PortalZone) {
@@ -623,6 +741,81 @@ final class DogAnimationController {
         ovalPath.lineWidth = 1
         NSColor(calibratedWhite: 1, alpha: 0.55).setStroke()
         ovalPath.stroke()
+    }
+
+    private func drawHouse() {
+        let roofPath = NSBezierPath()
+        roofPath.move(to: CGPoint(x: houseBounds.minX, y: houseBounds.minY + 6))
+        roofPath.line(to: CGPoint(x: houseBounds.midX, y: houseBounds.maxY))
+        roofPath.line(to: CGPoint(x: houseBounds.maxX, y: houseBounds.minY + 6))
+        roofPath.close()
+        NSColor(calibratedRed: 0.66, green: 0.24, blue: 0.16, alpha: 1).setFill()
+        roofPath.fill()
+
+        let bodyRect = NSRect(x: houseBounds.minX + 1.5, y: houseBounds.minY, width: houseBounds.width - 3, height: 7.5)
+        let bodyPath = NSBezierPath(roundedRect: bodyRect, xRadius: 1.4, yRadius: 1.4)
+        NSColor(calibratedRed: 0.96, green: 0.78, blue: 0.46, alpha: 1).setFill()
+        bodyPath.fill()
+
+        let doorRect = NSRect(x: houseBounds.midX - 1.9, y: houseBounds.minY, width: 3.8, height: 5.8)
+        let doorPath = NSBezierPath(roundedRect: doorRect, xRadius: 1, yRadius: 1)
+        NSColor(calibratedRed: 0.36, green: 0.18, blue: 0.11, alpha: 1).setFill()
+        doorPath.fill()
+
+        let outlinePath = NSBezierPath()
+        outlinePath.append(roofPath)
+        outlinePath.append(bodyPath)
+        outlinePath.lineWidth = 0.8
+        NSColor(calibratedWhite: 0.08, alpha: 0.45).setStroke()
+        outlinePath.stroke()
+
+        if isSleeping {
+            drawSleepIndicators()
+        }
+    }
+
+    private func drawSleepIndicators() {
+        let cycle = sleepStepCount % 24
+        let baseX = houseBounds.maxX - 1
+        let firstOffset = CGFloat(cycle % 4)
+        let secondOffset = CGFloat((cycle + 8) % 4)
+        let thirdOffset = CGFloat((cycle + 16) % 4)
+
+        drawSleepGlyph(
+            text: "Z",
+            x: baseX + firstOffset,
+            y: 10 + (firstOffset * 0.4),
+            fontSize: 7,
+            alpha: 0.95
+        )
+        drawSleepGlyph(
+            text: "Z",
+            x: baseX + 3 + secondOffset,
+            y: 12.5 + (secondOffset * 0.35),
+            fontSize: 6,
+            alpha: 0.78
+        )
+        drawSleepGlyph(
+            text: "z",
+            x: baseX + 6 + thirdOffset,
+            y: 14.2 + (thirdOffset * 0.25),
+            fontSize: 5,
+            alpha: 0.62
+        )
+    }
+
+    private func drawSleepGlyph(
+        text: String,
+        x: CGFloat,
+        y: CGFloat,
+        fontSize: CGFloat,
+        alpha: CGFloat
+    ) {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.boldSystemFont(ofSize: fontSize),
+            .foregroundColor: NSColor(calibratedWhite: 0.15, alpha: alpha)
+        ]
+        NSString(string: text).draw(at: CGPoint(x: x, y: y), withAttributes: attributes)
     }
 
     private func drawCorgi(at origin: CGPoint, facingRight: Bool) {
