@@ -43,6 +43,6 @@ You can combine both options:
 open build/CorgiWalker.app --args --dog papillon --width 120 --speed 1.8
 ```
 
-You can also switch between `Corgi` and `Papillon` from the status item menu after launch.
+You can also switch `Dog` from the status item menu after launch, and use `Set Width...` or `Set Speed...` there to enter exact numeric values while the app is running.
 
 The dog animates inside a fixed-width menu bar item. macOS does not provide a supported way to move an item freely across the entire menu bar, so the animation stays within its own slot.

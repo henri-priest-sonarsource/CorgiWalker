@@ -89,14 +89,16 @@ struct AppConfiguration {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let animation: DogAnimationController
     private var currentBreed: DogBreed
-    private let canvasWidth: CGFloat
+    private var currentWidth: CGFloat
+    private var currentSpeed: CGFloat
     private var statusItem: NSStatusItem?
     private var breedMenuItems: [DogBreed: NSMenuItem] = [:]
 
     override init() {
         let configuration = AppConfiguration.from(arguments: CommandLine.arguments)
         currentBreed = configuration.initialBreed
-        canvasWidth = configuration.canvasWidth
+        currentWidth = configuration.canvasWidth
+        currentSpeed = configuration.speed
         animation = DogAnimationController(
             breed: configuration.initialBreed,
             speed: configuration.speed
@@ -105,7 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let item = NSStatusBar.system.statusItem(withLength: canvasWidth)
+        let item = NSStatusBar.system.statusItem(withLength: currentWidth)
 
         guard let button = item.button else {
             NSApp.terminate(nil)
@@ -130,6 +132,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
+        let widthItem = NSMenuItem(
+            title: "Set Width...",
+            action: #selector(promptForWidth),
+            keyEquivalent: ""
+        )
+        widthItem.target = self
+        menu.addItem(widthItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let speedItem = NSMenuItem(
+            title: "Set Speed...",
+            action: #selector(promptForSpeed),
+            keyEquivalent: ""
+        )
+        speedItem.target = self
+        menu.addItem(speedItem)
+
+        menu.addItem(NSMenuItem.separator())
+
         let quitItem = NSMenuItem(
             title: "Quit Corgi Walker",
             action: #selector(quitApp),
@@ -142,7 +164,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
 
         applyBreed(currentBreed)
-        animation.start(on: button, canvasWidth: canvasWidth)
+        applyWidth(currentWidth)
+        applySpeed(currentSpeed)
+        animation.start(on: button, canvasWidth: currentWidth)
     }
 
     @objc
@@ -168,6 +192,87 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc
+    private func promptForWidth() {
+        guard let width = promptForNumber(
+            title: "Set Width",
+            message: "Enter the menu bar slot width. Minimum \(Int(AppConfiguration.minimumCanvasWidth)).",
+            currentValue: currentWidth,
+            minimumValue: AppConfiguration.minimumCanvasWidth
+        ) else {
+            return
+        }
+
+        applyWidth(width)
+    }
+
+    @objc
+    private func promptForSpeed() {
+        guard let speed = promptForNumber(
+            title: "Set Speed",
+            message: "Enter the movement speed. Minimum \(formatNumber(AppConfiguration.minimumSpeed)).",
+            currentValue: currentSpeed,
+            minimumValue: AppConfiguration.minimumSpeed
+        ) else {
+            return
+        }
+
+        applySpeed(speed)
+    }
+
+    private func applyWidth(_ width: CGFloat) {
+        currentWidth = width
+        statusItem?.length = width
+        animation.setCanvasWidth(width)
+    }
+
+    private func applySpeed(_ speed: CGFloat) {
+        currentSpeed = speed
+        animation.setSpeed(speed)
+    }
+
+    private func promptForNumber(
+        title: String,
+        message: String,
+        currentValue: CGFloat,
+        minimumValue: CGFloat
+    ) -> CGFloat? {
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Apply")
+        alert.addButton(withTitle: "Cancel")
+
+        let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        inputField.stringValue = formatNumber(currentValue)
+        alert.accessoryView = inputField
+
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return nil
+        }
+
+        let rawValue = inputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parsedValue = Double(rawValue) else {
+            NSSound.beep()
+            return nil
+        }
+
+        return max(CGFloat(parsedValue), minimumValue)
+    }
+
+    private func formatNumber(_ value: CGFloat) -> String {
+        let roundedValue = value.rounded(.towardZero)
+
+        if abs(value - roundedValue) < 0.0001 {
+            return String(Int(roundedValue))
+        }
+
+        return String(format: "%.2f", value)
+    }
+
+    @objc
     private func quitApp() {
         NSApp.terminate(nil)
     }
@@ -180,7 +285,7 @@ final class DogAnimationController {
     private var position: CGFloat = 6
     private var canvasWidth: CGFloat = 72
     private var breed: DogBreed
-    private let speed: CGFloat
+    private var speed: CGFloat
 
     private let canvasHeight: CGFloat = 18
 
@@ -208,6 +313,16 @@ final class DogAnimationController {
         self.breed = breed
         clampPosition()
         redraw()
+    }
+
+    func setCanvasWidth(_ canvasWidth: CGFloat) {
+        self.canvasWidth = canvasWidth
+        clampPosition()
+        redraw()
+    }
+
+    func setSpeed(_ speed: CGFloat) {
+        self.speed = speed
     }
 
     @objc
