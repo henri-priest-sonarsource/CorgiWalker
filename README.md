@@ -1,3 +1,5 @@
+<img width="187" height="58" alt="image" src="https://github.com/user-attachments/assets/6579befb-e1f3-4835-a52b-39f0ce201d58" />
+
 # CorgiWalker
 
 Minimal macOS menu bar app in Swift that shows a small animated dog moving left and right inside a status item.
