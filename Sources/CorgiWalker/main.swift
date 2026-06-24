@@ -92,9 +92,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var currentWidth: CGFloat
     private var currentSpeed: CGFloat
     private var showsTrack = false
+    private var showsPortal = false
     private var statusItem: NSStatusItem?
     private var breedMenuItems: [DogBreed: NSMenuItem] = [:]
     private var trackMenuItem: NSMenuItem?
+    private var portalMenuItem: NSMenuItem?
 
     override init() {
         let configuration = AppConfiguration.from(arguments: CommandLine.arguments)
@@ -166,6 +168,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
+        let portalItem = NSMenuItem(
+            title: "Portal",
+            action: #selector(togglePortal),
+            keyEquivalent: ""
+        )
+        portalItem.target = self
+        portalItem.state = .off
+        portalMenuItem = portalItem
+        menu.addItem(portalItem)
+
+        menu.addItem(NSMenuItem.separator())
+
         let quitItem = NSMenuItem(
             title: "Quit Corgi Walker",
             action: #selector(quitApp),
@@ -181,6 +195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyWidth(currentWidth)
         applySpeed(currentSpeed)
         applyTrackVisibility(showsTrack)
+        applyPortalVisibility(showsPortal)
         animation.start(on: button, canvasWidth: currentWidth)
     }
 
@@ -256,6 +271,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         animation.setTrackVisible(showsTrack)
     }
 
+    @objc
+    private func togglePortal() {
+        applyPortalVisibility(!showsPortal)
+    }
+
+    private func applyPortalVisibility(_ showsPortal: Bool) {
+        self.showsPortal = showsPortal
+        portalMenuItem?.state = showsPortal ? .on : .off
+        animation.setPortalVisible(showsPortal)
+    }
+
     private func promptForNumber(
         title: String,
         message: String,
@@ -305,6 +331,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 final class DogAnimationController {
+    private struct PortalZone {
+        let leftPortalX: CGFloat
+        let rightPortalX: CGFloat
+    }
+
     private weak var button: NSStatusBarButton?
     private var timer: Timer?
     private var direction: CGFloat = 1
@@ -313,6 +344,7 @@ final class DogAnimationController {
     private var breed: DogBreed
     private var speed: CGFloat
     private var showsTrack = false
+    private var showsPortal = false
 
     private let canvasHeight: CGFloat = 18
 
@@ -357,9 +389,16 @@ final class DogAnimationController {
         redraw()
     }
 
+    func setPortalVisible(_ showsPortal: Bool) {
+        self.showsPortal = showsPortal
+        clampPosition()
+        redraw()
+    }
+
     @objc
     private func step() {
         position += direction * speed
+        applyPortalTransitionIfNeeded()
 
         if position <= 6 {
             position = 6
@@ -378,6 +417,7 @@ final class DogAnimationController {
 
     private func clampPosition() {
         position = min(max(position, 6), maxPositionX)
+        applyPortalTransitionIfNeeded()
     }
 
     private func redraw() {
@@ -411,6 +451,10 @@ final class DogAnimationController {
             track.fill()
         }
 
+        if showsPortal, let portalZone = currentPortalZone() {
+            drawPortal(portalZone)
+        }
+
         let origin = CGPoint(x: position, y: 2)
         let facingRight = direction > 0
 
@@ -420,6 +464,60 @@ final class DogAnimationController {
         case .papillon:
             drawPapillon(at: origin, facingRight: facingRight)
         }
+    }
+
+    private func currentPortalZone() -> PortalZone? {
+        let travelWidth = maxPositionX - 6
+
+        guard travelWidth > 0 else {
+            return nil
+        }
+
+        let leftPortalX = 6 + (travelWidth * 0.35)
+        let rightPortalX = 6 + (travelWidth * 0.65)
+
+        guard rightPortalX > leftPortalX else {
+            return nil
+        }
+
+        return PortalZone(
+            leftPortalX: leftPortalX,
+            rightPortalX: rightPortalX
+        )
+    }
+
+    private func applyPortalTransitionIfNeeded() {
+        guard showsPortal, let portalZone = currentPortalZone() else {
+            return
+        }
+
+        if direction > 0, position >= portalZone.leftPortalX, position < portalZone.rightPortalX {
+            position = portalZone.rightPortalX
+        } else if direction < 0, position <= portalZone.rightPortalX, position > portalZone.leftPortalX {
+            position = portalZone.leftPortalX
+        }
+    }
+
+    private func drawPortal(_ portalZone: PortalZone) {
+        drawPortalOval(
+            centerX: portalZone.leftPortalX + (breed.spriteSize.width / 2),
+            color: NSColor(calibratedRed: 0.98, green: 0.55, blue: 0.12, alpha: 0.85)
+        )
+        drawPortalOval(
+            centerX: portalZone.rightPortalX + (breed.spriteSize.width / 2),
+            color: NSColor(calibratedRed: 0.18, green: 0.52, blue: 0.96, alpha: 0.85)
+        )
+    }
+
+    private func drawPortalOval(centerX: CGFloat, color: NSColor) {
+        let ovalRect = NSRect(x: centerX - 4, y: 3.5, width: 8, height: 11)
+        let ovalPath = NSBezierPath(ovalIn: ovalRect)
+        color.setFill()
+        ovalPath.fill()
+
+        ovalPath.lineWidth = 1
+        NSColor(calibratedWhite: 1, alpha: 0.55).setStroke()
+        ovalPath.stroke()
     }
 
     private func drawCorgi(at origin: CGPoint, facingRight: Bool) {

@@ -45,7 +45,7 @@ You can combine both options:
 open build/CorgiWalker.app --args --dog papillon --width 120 --speed 1.8
 ```
 
-You can also switch `Dog` from the status item menu after launch, and use `Set Width...` or `Set Speed...` there to enter exact numeric values while the app is running.
+You can also switch `Dog` from the status item menu after launch, use `Set Width...` or `Set Speed...` there to enter exact numeric values while the app is running, and toggle `Portal` to add orange and blue portal ovals that instantly jump the dog across the middle 30% of the track.
 
 The dog animates inside a fixed-width menu bar item. macOS does not provide a supported way to move an item freely across the entire menu bar, so the animation stays within its own slot.
 
