@@ -596,6 +596,10 @@ final class DogAnimationController {
         sleepStepCount > 0
     }
 
+    private var shouldDrawDogWhilePaused: Bool {
+        isPausedBySignal && showsPauseAlert
+    }
+
     private var houseBounds: NSRect {
         NSRect(
             x: canvasWidth - houseSize.width - 4,
@@ -652,7 +656,7 @@ final class DogAnimationController {
             drawHouse()
         }
 
-        if !isSleeping {
+        if !isSleeping || shouldDrawDogWhilePaused {
             let origin = CGPoint(x: position, y: 2)
             let facingRight = direction > 0
             let pauseTint = currentPauseTintColor()
