@@ -94,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var showsTrack = false
     private var showsPortal = false
     private var statusItem: NSStatusItem?
+    private var statusMenu: NSMenu?
     private var breedMenuItems: [DogBreed: NSMenuItem] = [:]
     private var trackMenuItem: NSMenuItem?
     private var portalMenuItem: NSMenuItem?
@@ -119,6 +120,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         button.imagePosition = .imageOnly
+        button.target = self
+        button.action = #selector(handleStatusItemClick(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
         let menu = NSMenu()
 
@@ -188,7 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quitItem.target = self
         menu.addItem(quitItem)
 
-        item.menu = menu
+        statusMenu = menu
         statusItem = item
 
         applyBreed(currentBreed)
@@ -197,6 +201,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyTrackVisibility(showsTrack)
         applyPortalVisibility(showsPortal)
         animation.start(on: button, canvasWidth: currentWidth)
+    }
+
+    @objc
+    private func handleStatusItemClick(_ sender: NSStatusBarButton) {
+        guard let event = NSApp.currentEvent else {
+            return
+        }
+
+        if shouldOpenMenu(for: event) {
+            statusMenu?.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.maxY - 2), in: sender)
+            return
+        }
+
+        let clickPoint = sender.convert(event.locationInWindow, from: nil)
+        animation.handleClick(at: clickPoint)
     }
 
     @objc
@@ -282,6 +301,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         animation.setPortalVisible(showsPortal)
     }
 
+    private func shouldOpenMenu(for event: NSEvent) -> Bool {
+        if event.type == .rightMouseUp {
+            return true
+        }
+
+        return event.type == .leftMouseUp && event.modifierFlags.contains(.control)
+    }
+
     private func promptForNumber(
         title: String,
         message: String,
@@ -345,8 +372,12 @@ final class DogAnimationController {
     private var speed: CGFloat
     private var showsTrack = false
     private var showsPortal = false
+    private var targetPosition: CGFloat?
+    private var spinAngle: CGFloat = 0
+    private var spinStepCount = 0
 
     private let canvasHeight: CGFloat = 18
+    private let spinFrameCount = 10
 
     init(breed: DogBreed, speed: CGFloat) {
         self.breed = breed
@@ -391,14 +422,44 @@ final class DogAnimationController {
 
     func setPortalVisible(_ showsPortal: Bool) {
         self.showsPortal = showsPortal
+        targetPosition = adjustedTargetPosition(targetPosition)
         clampPosition()
+        redraw()
+    }
+
+    func handleClick(at point: CGPoint) {
+        if dogBounds.contains(point) {
+            startSpin()
+            redraw()
+            return
+        }
+
+        guard let target = adjustedTargetPosition(point.x) else {
+            return
+        }
+
+        direction = target >= position ? 1 : -1
+        targetPosition = target
         redraw()
     }
 
     @objc
     private func step() {
+        if spinStepCount > 0 {
+            spinStepCount -= 1
+            spinAngle += 36
+
+            if spinStepCount == 0 {
+                spinAngle = 0
+            }
+
+            redraw()
+            return
+        }
+
         position += direction * speed
         applyPortalTransitionIfNeeded()
+        applyTargetPositionIfNeeded()
 
         if position <= 6 {
             position = 6
@@ -415,9 +476,15 @@ final class DogAnimationController {
         canvasWidth - breed.spriteSize.width - 6
     }
 
+    private var dogBounds: NSRect {
+        NSRect(x: position, y: 2, width: breed.spriteSize.width, height: breed.spriteSize.height)
+    }
+
     private func clampPosition() {
         position = min(max(position, 6), maxPositionX)
+        targetPosition = adjustedTargetPosition(targetPosition)
         applyPortalTransitionIfNeeded()
+        applyTargetPositionIfNeeded()
     }
 
     private func redraw() {
@@ -496,6 +563,44 @@ final class DogAnimationController {
         } else if direction < 0, position <= portalZone.rightPortalX, position > portalZone.leftPortalX {
             position = portalZone.leftPortalX
         }
+    }
+
+    private func applyTargetPositionIfNeeded() {
+        guard let targetPosition else {
+            return
+        }
+
+        let reachedTarget = direction > 0 ? position >= targetPosition : position <= targetPosition
+
+        if reachedTarget {
+            position = targetPosition
+            self.targetPosition = nil
+        }
+    }
+
+    private func adjustedTargetPosition(_ rawTargetPosition: CGFloat?) -> CGFloat? {
+        guard let rawTargetPosition else {
+            return nil
+        }
+
+        let clampedTarget = min(max(rawTargetPosition, 6), maxPositionX)
+
+        guard showsPortal, let portalZone = currentPortalZone() else {
+            return clampedTarget
+        }
+
+        if clampedTarget > portalZone.leftPortalX && clampedTarget < portalZone.rightPortalX {
+            let portalMidpoint = (portalZone.leftPortalX + portalZone.rightPortalX) / 2
+            return clampedTarget < portalMidpoint ? portalZone.leftPortalX : portalZone.rightPortalX
+        }
+
+        return clampedTarget
+    }
+
+    private func startSpin() {
+        spinStepCount = spinFrameCount
+        spinAngle = 0
+        targetPosition = nil
     }
 
     private func drawPortal(_ portalZone: PortalZone) {
@@ -689,6 +794,12 @@ final class DogAnimationController {
         if !facingRight {
             transform.translate(x: breed.spriteSize.width, y: 0)
             transform.scale(x: -1, y: 1)
+        }
+
+        if spinAngle > 0 {
+            transform.translate(x: breed.spriteSize.width / 2, y: breed.spriteSize.height / 2)
+            transform.rotate(byDegrees: spinAngle)
+            transform.translate(x: -(breed.spriteSize.width / 2), y: -(breed.spriteSize.height / 2))
         }
 
         return transform
